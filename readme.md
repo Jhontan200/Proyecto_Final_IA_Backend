@@ -42,3 +42,29 @@ pip install fastapi uvicorn pydantic[email] email-validator psycopg2-binary
 * pydantic[email] y email-validator: Encargados de robustecer la validación de estructuras de datos y correos electrónicos reales en las solicitudes de login/registro.
 
 * psycopg2-binary: Conector nativo de PostgreSQL para interactuar mediante cursores con las bases de datos relacionales en la nube.
+
+# 🚀 Ejecución del Servidor de Desarrollo
+Para levantar el backend localmente y dejarlo en modo de escucha activa ante cambios en el código, ejecuta:
+```bash
+uvicorn main:app --reload
+```
+Si todo se instaló correctamente, verás una salida en la terminal similar a esta:
+```bash
+INFO:     Uvicorn running on [http://127.0.0.1:8000](http://127.0.0.1:8000) (Press CTRL+C to quit)
+INFO:     Started reloader process [...]
+INFO:     Will watch for changes in these directories: ['D:\...\Proyecto']
+```
+# 🗺️ Endpoints y Documentación Interactiva (Swagger UI)
+Una vez que el servidor esté corriendo, FastAPI autogenera la documentación de las rutas. Puedes ingresar desde tu navegador web a:
+* Documentación Interactiva: http://127.0.0.1:8000/docs (Aquí puedes probar los métodos de los agentes directamente presionando el botón "Try it out").
+
+* JSON alternativo de la API: http://127.0.0.1:8000/redoc
+
+Rutas principales expuestas para el Frontend:
+* POST /api/login: Valida las credenciales de acceso contra la tabla usuarios.
+
+* POST /api/registro: Permite dar de alta cuentas nuevas guardando los campos nombre, correo y contrasena en la base de datos.
+
+* GET /api/formulario: Retorna el árbol de preguntas dinámicas directo de las tablas del cuestionario.
+
+* POST /api/recomendar: Recibe las elecciones del usuario, dispara el motor de inferencia multiagente y registra la auditoría del resultado en historial_recomendaciones.
