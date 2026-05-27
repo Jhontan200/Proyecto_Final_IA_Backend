@@ -1,19 +1,34 @@
 import os
-import psycopg2
-from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
+from supabase import create_client, Client
 
 # Cargar las variables del archivo .env
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Obtenemos las nuevas credenciales para la API REST
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-def get_db_connection():
-    """Establece una conexión directa con la base de datos de Supabase."""
-    try:
-        # RealDictCursor nos permite recuperar las filas como diccionarios de Python {'columna': valor}
-        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
-        return conn
-    except Exception as e:
-        print(f"❌ Error crítico al conectar a Supabase: {e}")
-        return None
+# Inicializamos la instancia global del cliente
+supabase: Client = None
+
+try:
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise ValueError("Faltan las variables SUPABASE_URL o SUPABASE_KEY en el archivo .env")
+    
+    # Se crea el cliente único (Pattern Singleton)
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    print("🚀 Cliente de Supabase inicializado correctamente a través de la API HTTP.")
+
+except Exception as e:
+    print(f"❌ Error crítico al inicializar el cliente de Supabase: {e}")
+    supabase = None
+
+def get_supabase() -> Client:
+    """
+    Retorna la instancia del cliente de Supabase.
+    Reemplaza conceptualmente a la antigua función get_db_connection().
+    """
+    if supabase is None:
+        print("⚠️ Advertencia: Intentando recuperar un cliente de Supabase no inicializado.")
+    return supabase

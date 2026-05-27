@@ -1,38 +1,39 @@
-from config.database import get_db_connection
+# models/cuestionario_model.py
+from config.database import supabase  # <-- Importamos el cliente global de Supabase
 
 class CuestionarioModel:
     @staticmethod
     def obtener_preguntas_con_respuestas():
         """Cruza las tablas 'preguntas' y 'respuestas' para generar el formulario dinámico"""
-        conn = get_db_connection()
-        if not conn:
-            return []
         try:
-            cursor = conn.cursor()
-            # Leemos las preguntas y concatenamos sus respuestas válidas en un arreglo estructurado
-            query = """
-                SELECT p.id_pregunta, p.pregunta, 
-                       ARRAY_AGG(r.valor) AS opciones
-                FROM preguntas p
-                LEFT JOIN respuestas r ON p.id_pregunta = r.id_pregunta
-                GROUP BY p.id_pregunta, p.pregunta
-                ORDER BY p.id_pregunta ASC;
-            """
-            cursor.execute(query)
-            resultados = cursor.fetchall()
-            cursor.close()
+            # Reemplazamos el SQL crudo por la API declarativa de Supabase.
+            # Realiza un LEFT JOIN automático usando la relación de llaves foráneas.
+            respuesta = (
+                supabase.table("preguntas")
+                .select("id_pregunta, pregunta, respuestas(valor)")
+                .order("id_pregunta", ascending=True)
+                .execute()
+            )
 
-            # Estructuramos el diccionario para el Agente Interfaz
+            # respuesta.data ya viene convertido en una lista de diccionarios de Python
+            datos_raw = respuesta.data
             formulario = []
-            for item in resultados:
+            
+            for item in datos_raw:
+                # Extraemos los strings de la columna 'valor' dentro del nodo anidado de respuestas
+                opciones = [r["valor"] for r in item.get("respuestas", []) if r.get("valor") is not None]
+                
+                # Mantenemos exactamente la misma estructura de salida para el Agente Interfaz
                 formulario.append({
-                    "id_pregunta": item[0],
-                    "pregunta": item[1],
-                    "opciones": item[2] if item[2] != [None] else []
+                    "id_pregunta": item["id_pregunta"],
+                    "pregunta": item["pregunta"],
+                    "opciones": opciones
                 })
+                
             return formulario
+            
         except Exception as e:
-            print(f"Error en CuestionarioModel: {e}")
+            print(f"Error en CuestionarioModel con Supabase API: {e}")
             return []
-        finally:
-            conn.close()
+        # Nota: Ya no es necesario el bloque 'finally' ni 'conn.close()' 
+        # porque la API gestiona las peticiones HTTP de forma automática.

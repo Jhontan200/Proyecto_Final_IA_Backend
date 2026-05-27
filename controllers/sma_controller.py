@@ -1,3 +1,4 @@
+# agents/sistema_multiagente.py
 from models.usuario_model import UsuarioModel
 from models.cuestionario_model import CuestionarioModel
 from models.sbc_model import SBCModel
@@ -19,7 +20,7 @@ class AgenteExpertoSBC:
     def evaluar_necesidades_tecnicas(self, hechos_iniciales: dict):
         print(f"[{self.nombre}]: Iniciando ciclo de inferencia y emparejamiento de reglas...")
         
-        # Reutilizamos el motor puro y dinámico con la memoria de trabajo
+        # Obtenemos las reglas (SBCModel ahora devuelve una lista de diccionarios limpia desde Supabase)
         todas_las_reglas = SBCModel.obtener_reglas()
         
         memoria_trabajo = {
@@ -32,7 +33,6 @@ class AgenteExpertoSBC:
             "trabajo": True if hechos_iniciales.get("uso") == "trabajo" else False,
             "almacenamiento": "alto" if hechos_iniciales.get("almacenamiento") == "alto" else "normal",
             "pantalla": "grande" if hechos_iniciales.get("pantalla") == "grande" else "normal",
-            # Soporta tanto el alias '5g' del JSON del Frontend como la propiedad interna de Pydantic
             "5g": True if hechos_iniciales.get("5g") == "sí" or hechos_iniciales.get("red_5g") == "sí" else False,
             "android": True,
             "ios": False
@@ -56,17 +56,20 @@ class AgenteExpertoSBC:
             hay_cambios = False
             ciclos += 1
             for regla in todas_las_reglas:
-                if regla['id_regla'] in reglas_ya_disparadas:
+                # Al ser diccionarios, accedemos mediante strings de forma segura
+                id_regla = regla.get('id_regla')
+                
+                if id_regla in reglas_ya_disparadas:
                     continue
                 
-                # Evaluación usando el parser matemático abstracto
-                if SBCController._evaluar_condicion_pura(regla['condicion'], memoria_trabajo):
-                    reglas_ya_disparadas.add(regla['id_regla'])
+                # Evaluación usando el parser matemático abstracto de tu controlador
+                if SBCController._evaluar_condicion_pura(regla.get('condicion', ''), memoria_trabajo):
+                    reglas_ya_disparadas.add(id_regla)
                     reglas_explicacion_sbc.append(regla)
                     hay_cambios = True
                     
                     # Ejecución del consecuente (Actuación)
-                    acciones = [a.strip() for a in regla['resultado'].lower().split(" and ")]
+                    acciones = [a.strip() for a in regla.get('resultado', '').lower().split(" and ")]
                     for accion in acciones:
                         if ">=" in accion:
                             var, val = accion.split(">=")
@@ -106,35 +109,44 @@ class AgenteBrokerTiendas:
     def optimizar_catalogo_y_precios(self, requisitos_hardware: dict, reglas_disparadas: list):
         print(f"[{self.nombre}]: Extrayendo dispositivos aptos y analizando competitividad de tiendas...")
         
-        # Obtenemos los dispositivos crudos aplicando filtros avanzados desde la BD (8 tablas combinadas)
+        # Llama a la consulta unificada de Supabase (con mapeo relacional resuelto)
         dispositivos_candidatos = DispositivoModel.buscar_dispositivos_sbc_avanzado(requisitos_hardware)
         
         recomendaciones_finales = []
         
         for cel in dispositivos_candidatos:
-            explicaciones = [f"Cumple con tu presupuesto asignado en {cel['tienda']} ({cel['precio']} Bs)."]
+            # Control defensivo frente a valores nulos o vacíos provenientes de la API HTTP
+            tienda_nombre = cel.get('tienda') or "Disponibilidad General"
+            precio_actual = cel.get('precio', 0.0)
             
-            # El agente construye de forma proactiva la traza lógica usando la explicación de la BD
+            explicaciones = [f"Cumple con tu presupuesto asignado en {tienda_nombre} ({precio_actual} Bs)."]
+            
+            # El agente construye la traza lógica evaluando las reglas que se activaron
             for r in reglas_disparadas:
-                if "gaming" in r['condicion'] and cel['cpu_benchmark'] >= 700000:
-                    explicaciones.append(f"Regla #{r['id_regla']} ejecutada: Perfil Gaming detectado. Se requiere un SoC de alto rendimiento con GPU certificada ({cel['gpu']}) y potencia Antutu de {cel['antutu']} pts.")
-                elif "fotografia" in r['condicion'] and requisitos_hardware["requiere_camara"]:
-                    explicaciones.append(f"Regla #{r['id_regla']} ejecutada: Exigencia fotográfica detectada. Filtro de hardware activado para sensores superiores a 50 MP.")
-                elif "bateria" in r['condicion'] and requisitos_hardware["requiere_bateria"]:
-                    explicaciones.append(f"Regla #{r['id_regla']} ejecutada: Necesidad de autonomía móvil crítica. Exigiendo baterías de alta densidad (>= 5000 mAh).")
+                condicion = r.get('condicion', '')
+                id_regla = r.get('id_regla')
+                
+                if "gaming" in condicion and cel.get('cpu_benchmark', 0) >= 700000:
+                    gpu_name = cel.get('gpu') or "Integrada"
+                    antutu_score = cel.get('antutu') or "N/A"
+                    explicaciones.append(f"Regla #{id_regla} ejecutada: Perfil Gaming detectado. Se requiere un SoC de alto rendimiento con GPU certificada ({gpu_name}) y potencia Antutu de {antutu_score} pts.")
+                elif "fotografia" in condicion and requisitos_hardware["requiere_camara"]:
+                    explicaciones.append(f"Regla #{id_regla} ejecutada: Exigencia fotográfica detectada. Filtro de hardware activado para sensores superiores a 50 MP.")
+                elif "bateria" in condicion and requisitos_hardware["requiere_bateria"]:
+                    explicaciones.append(f"Regla #{id_regla} ejecutada: Necesidad de autonomía móvil crítica. Exigiendo baterías de alta densidad (>= 5000 mAh).")
             
             recomendaciones_finales.append({
-                "id_dispositivo": cel["id_dispositivo"],
-                "marca": cel["marca"],
-                "modelo": cel["modelo"],
-                "precio": cel["precio"],
-                "tienda": cel["tienda"],
-                "tienda_url": cel["tienda_url"],
-                "detalles_tecnicos": f"Procesador: {cel['cpu']} ({cel['cpu_gama']}) | RAM: {cel['ram']}GB | Almacenamiento: {cel['almacenamiento']}GB | OS: {cel['sistema_operativo']}",
+                "id_dispositivo": cel.get("id_dispositivo"),
+                "marca": cel.get("marca"),
+                "modelo": cel.get("modelo"),
+                "precio": precio_actual,
+                "tienda": tienda_nombre,
+                "tienda_url": cel.get("tienda_url") or "#",
+                "detalles_tecnicos": f"Procesador: {cel.get('cpu')} ({cel.get('cpu_gama')}) | RAM: {cel.get('ram')}GB | Almacenamiento: {cel.get('almacenamiento')}GB | OS: {cel.get('sistema_operativo')}",
                 "explicacion": " ".join(list(set(explicaciones)))
             })
 
-        # Ordenar del más barato al más caro y retornar solo el top 3 óptimo
+        # Ordenamiento seguro por precio ascendente
         recomendaciones_optimizadas = sorted(recomendaciones_finales, key=lambda x: x['precio'])
         return recomendaciones_optimizadas[:3]
 
@@ -156,14 +168,16 @@ class AgenteInterfazCoordinador:
     def procesar_login(self, correo: str, contrasena: str):
         print(f"[{self.nombre}]: Procesando solicitud de acceso para {correo}...")
         usuario = UsuarioModel.verificar_credenciales(correo, contrasena)
+        
+        # Con Supabase, si las credenciales son correctas, se devuelve un diccionario con los datos del usuario
         if usuario:
-            print(f"[{self.nombre}]: Acceso concedido a {usuario['nombre']}.")
+            print(f"[{self.nombre}]: Acceso concedido a {usuario.get('nombre')}.")
             return {"success": True, "usuario": usuario}
         print(f"[{self.nombre}]: Credenciales inválidas.")
         return {"success": False, "message": "Correo o contraseña incorrectos."}
 
     def procesar_registro(self, nombre: str, correo: str, contrasena: str):
-        """Coordinación del registro delegando la persistencia en el modelo correspondiente"""
+        """Coordinación del registro delegando la persistencia en el modelo unificado"""
         print(f"[{self.nombre}]: Coordinando el registro de un nuevo usuario: {nombre} ({correo})...")
         resultado = UsuarioModel.registrar_usuario(nombre, correo, contrasena)
         return resultado
@@ -184,9 +198,10 @@ class AgenteInterfazCoordinador:
         
         # 3. Persistencia de Auditoría: Si hay un usuario logueado, registramos en la BD de Supabase
         if id_usuario and top_recomendaciones:
-            id_ganador = top_recomendaciones[0]["id_dispositivo"]
-            print(f"[{self.nombre}]: Registrando recomendación del dispositivo ID {id_ganador} para el usuario {id_usuario} en el Historial...")
-            UsuarioModel.guardar_en_historial(id_usuario, id_ganador, puntuacion=95)
+            id_ganador = top_recomendaciones[0].get("id_dispositivo")
+            if id_ganador:
+                print(f"[{self.nombre}]: Registrando recomendación del dispositivo ID {id_ganador} para el usuario {id_usuario} en el Historial...")
+                UsuarioModel.guardar_en_historial(id_usuario, id_ganador, puntuacion=95)
             
         print(f"[{self.nombre}]: Flujo SMA finalizado con éxito.")
         return {"success": True, "recomendaciones": top_recomendaciones}

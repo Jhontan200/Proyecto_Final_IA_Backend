@@ -1,3 +1,4 @@
+# controllers/sbc_controller.py
 from models.sbc_model import SBCModel
 from models.dispositivo_model import DispositivoModel
 
@@ -96,7 +97,7 @@ class SBCController:
         hay_cambios = True
         ciclos_ejecutados = 0
         
-        while hay_cambios and ciclos_ejecutados < 10:  # El límite de 10 evita bucles infinitos por reglas mal formadas
+        while hay_cambios and ciclos_ejecutados < 10:  # Evita bucles infinitos por reglas mal formadas
             hay_cambios = False
             ciclos_ejecutados += 1
             
@@ -130,25 +131,24 @@ class SBCController:
                             memoria_trabajo[var] = True if val == "true" else (False if val == "false" else val)
 
         # 4. TRADUCIR HECHOS DE LA MEMORIA DE TRABAJO A REQUISITOS DE HARDWARE
-        # Tras la inferencia, extraemos los hechos técnicos consolidados
         requisitos_hardware["benchmark_min"] = memoria_trabajo.get("benchmark", 0)
         requisitos_hardware["ram_min"] = memoria_trabajo.get("ram", 4)
         if memoria_trabajo.get("camara", 0) >= 50 or memoria_trabajo.get("fotografia") == "alta":
             requisitos_hardware["requiere_camara"] = True
         if memoria_trabajo.get("bateria", 0) >= 5000 or memoria_trabajo.get("bateria") == "alta":
-            requisitos_hardware["requiere_bateria"] = True
+            requisitos_hardware["requiere_bateria"] = True if 'requisitos_hardware' in locals() else requisitos_hardware.update({"requiere_bateria": True})
 
         # 5. CONSULTAR LAS CONCLUSIONES A LA BASE DE DATOS
-        celulares_candidatos = DispositivoModel.buscar_celulares_por_filtros(requisitos_hardware)
+        celulares_candidatos = DispositivoModel.buscar_dispositivos_sbc_avanzado(requisitos_hardware)
         
         # 6. MÓDULO EXPLICADOR (Rastreo del Camino de Razonamiento)
         recomendaciones_finales = []
         for cel in celulares_candidatos:
             explicaciones = [f"Se ajusta al presupuesto asignado de {cel['precio']} Bs."]
             
-            # Explicamos basándonos explícitamente en el ID de las reglas que se dispararon en el bucle
+            # Explicamos basándonos explícitamente en el ID de las reglas que se dispararon
             for r in reglas_explicacion_sbc:
-                if "gaming" in r['condicion'] and cel['cpu_benchmark'] >= 700000:
+                if "gaming" in r['condicion'] and cel.get('cpu_benchmark', 0) >= 700000:
                     explicaciones.append(f"Regla #{r['id_regla']} disparada: Al requerir Gaming con presupuesto válido se exige alta tasa de refresco y procesamiento (Benchmark >= 700,000 pts).")
                 elif "fotografia" in r['condicion'] and requisitos_hardware["requiere_camara"]:
                     explicaciones.append(f"Regla #{r['id_regla']} disparada: Su perfil requiere fotografía avanzada, activando la búsqueda de sensores superiores a 50 MP.")

@@ -1,40 +1,41 @@
-from config.database import get_db_connection
+# models/sbc_model.py
+from config.database import supabase  # <-- Importamos el cliente unificado
 
 class SBCModel:
     @staticmethod
     def obtener_preguntas():
         """Trae todas las preguntas registradas para el cuestionario del SBC."""
-        conn = get_db_connection()
-        if not conn:
-            return []
         try:
-            cursor = conn.cursor()
-            query = "SELECT id_pregunta, pregunta FROM preguntas ORDER BY id_pregunta ASC;"
-            cursor.execute(query)
-            preguntas = cursor.fetchall()
-            cursor.close()
-            return preguntas
+            # Reemplazamos la consulta SQL por métodos declarativos del cliente
+            respuesta = (
+                supabase.table("preguntas")
+                .select("id_pregunta, pregunta")
+                .order("id_pregunta", ascending=True)
+                .execute()
+            )
+            
+            # .data ya contiene la lista estructurada de diccionarios
+            return respuesta.data
+            
         except Exception as e:
-            print(f"❌ Error al obtener preguntas: {e}")
+            print(f"❌ Error al obtener preguntas con Supabase API: {e}")
             return []
-        finally:
-            conn.close()
 
     @staticmethod
     def obtener_reglas():
         """Trae las reglas lógicas (condición y resultado) ordenadas por prioridad."""
-        conn = get_db_connection()
-        if not conn:
-            return []
         try:
-            cursor = conn.cursor()
-            query = "SELECT id_regla, condicion, resultado, prioridad FROM reglas_sbc ORDER BY prioridad DESC;"
-            cursor.execute(query)
-            reglas = cursor.fetchall()
-            cursor.close()
-            return reglas
+            # Reemplazamos el SELECT con ordenación descendente
+            respuesta = (
+                supabase.table("reglas_sbc")
+                .select("id_regla, condicion, resultado, prioridad")
+                .order("prioridad", ascending=False)
+                .execute()
+            )
+            
+            return respuesta.data
+            
         except Exception as e:
-            print(f"❌ Error al obtener reglas: {e}")
+            print(f"❌ Error al obtener reglas con Supabase API: {e}")
             return []
-        finally:
-            conn.close()
+        # Nota: Desaparecen los bloques 'finally' y 'conn.close()' en ambos métodos
