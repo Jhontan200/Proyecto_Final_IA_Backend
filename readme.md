@@ -33,7 +33,7 @@ cd "Proyecto"
 ### Paso 2: Instalar las Dependencias del Sistema
 Instala todas las librerías necesarias ejecutando el siguiente comando:
 ```bash
-pip install fastapi uvicorn pydantic[email] email-validator psycopg2-binary
+pip install fastapi uvicorn pydantic[email] email-validator psycopg2-binarypip install fastapi uvicorn pydantic[email] email-validator psycopg2-binary supabase python-dotenv
 ```
 * fastapi: Framework principal para construir los endpoints de la API.
 
@@ -42,7 +42,9 @@ pip install fastapi uvicorn pydantic[email] email-validator psycopg2-binary
 * pydantic[email] y email-validator: Encargados de robustecer la validación de estructuras de datos y correos electrónicos reales en las solicitudes de login/registro.
 
 * psycopg2-binary: Conector nativo de PostgreSQL para interactuar mediante cursores con las bases de datos relacionales en la nube.
+* supabase: El SDK oficial de Python para Supabase. Permite gestionar de forma sencilla la autenticación de usuarios, consultas a la base de datos mediante su API cliente, y el manejo de almacenamiento (storage buckets) o bases de datos en tiempo real.
 
+* python-dotenv: Librería esencial para cargar de forma segura la URL de tu proyecto y las llaves de acceso (SUPABASE_URL y SUPABASE_ANON_KEY) desde tu archivo .env local hacia las variables de entorno, evitando fugas de credenciales en Git.
 # 🚀 Ejecución del Servidor de Desarrollo
 Para levantar el backend localmente y dejarlo en modo de escucha activa ante cambios en el código, ejecuta:
 ```bash
