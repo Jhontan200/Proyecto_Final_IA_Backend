@@ -11,7 +11,7 @@ class CuestionarioModel:
             respuesta = (
                 supabase.table("preguntas")
                 .select("id_pregunta, pregunta, respuestas(valor)")
-                .order("id_pregunta", ascending=True)
+                .order("id_pregunta", desc=False)
                 .execute()
             )
 

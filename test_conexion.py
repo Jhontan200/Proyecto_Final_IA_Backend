@@ -1,44 +1,29 @@
-import os
-from dotenv import load_dotenv
-from supabase import create_client, Client
+# test_conexion.py
+from config.database import supabase
 
-# Cargar las variables de entorno desde el archivo .env
-load_dotenv()
-
-def probar_puente():
-    print("🔄 Intentando conectar a Supabase vía API Client...")
-    
-    # Obtener credenciales desde el entorno
-    url: str = os.environ.get("SUPABASE_URL")
-    key: str = os.environ.get("SUPABASE_KEY")
-    
-    if not url or not key:
-        print("❌ Error: Faltan las variables SUPABASE_URL o SUPABASE_KEY en tu archivo .env")
-        print("❌ CONEXIÓN FALLIDA. Revisa tu archivo .env.")
-        return
-
+def diagnosticar_datos_reales():
+    print("\n🔍 --- INSPECTOR DE DATOS RELACIONALES ---")
     try:
-        # Inicializar el cliente de Supabase (equivale a levantar el puente)
-        supabase: Client = create_client(url, key)
+        # 1. Validar registros de dispositivos
+        disp = supabase.table("dispositivos").select("id_dispositivo, modelo, id_categoria, ram").execute()
+        print(f"📱 Total celulares en la tabla 'dispositivos': {len(disp.data)}")
+        if disp.data:
+            print(f"   💡 Ejemplo de fila 1: {disp.data[0]}")
         
-        print("¡CONEXIÓN EXITOSA! 🎉")
-        print(f"📡 Conectado exitosamente al proyecto: {url}")
-        
-        # Validar que tus tablas existan haciendo un conteo rápido de categorías
-        # Usamos .count("exact") para emular el SELECT COUNT(*) de SQL
-        print("📦 Verificando persistencia de datos...")
-        respuesta = supabase.table("categorias").select("*", count="exact").limit(1).execute()
-        
-        # Obtener el total desde los metadatos de la respuesta
-        total_categorias = respuesta.count
-        print(f"📦 Conexión operacional. Categorías encontradas en tu base de datos: {total_categorias}")
-        
+        # 2. Validar registros de precios
+        precios = supabase.table("precios").select("id_dispositivo, precio").execute()
+        print(f"💰 Total registros en la tabla 'precios': {len(precios.data)}")
+        if precios.data:
+            print(f"   💡 Ejemplo de fila 1: {precios.data[0]}")
+            
+            # Calcular rango de precios en tiempo real
+            valores = [float(p['precio']) for p in precios.data if p.get('precio')]
+            if valores:
+                print(f"   💵 Celular más barato en BD: {min(valores)} Bs")
+                print(f"   💵 Celular más caro en BD: {max(valores)} Bs")
+
     except Exception as e:
-        print(f"❌ Error al ejecutar la consulta de prueba a través de la API: {e}")
-        print("❌ Revisa que la tabla 'categorias' exista y que tus credenciales tengan los accesos correctos.")
-    finally:
-        # Nota: El cliente HTTP de Supabase no requiere un conn.close() explícito
-        print("🔒 Sesión de prueba finalizada de forma segura.")
+        print(f"❌ Error al consultar Supabase: {e}")
 
 if __name__ == "__main__":
-    probar_puente()
+    diagnosticar_datos_reales()

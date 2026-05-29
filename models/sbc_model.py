@@ -10,7 +10,7 @@ class SBCModel:
             respuesta = (
                 supabase.table("preguntas")
                 .select("id_pregunta, pregunta")
-                .order("id_pregunta", ascending=True)
+                .order("id_pregunta", desc=False)
                 .execute()
             )
             
@@ -29,7 +29,7 @@ class SBCModel:
             respuesta = (
                 supabase.table("reglas_sbc")
                 .select("id_regla, condicion, resultado, prioridad")
-                .order("prioridad", ascending=False)
+                .order("prioridad", desc=True)
                 .execute()
             )
             

@@ -1,101 +1,105 @@
 # models/dispositivo_model.py
-from config.database import supabase  # <-- Importamos tu cliente unificado
+from config.database import supabase
+
 
 class DispositivoModel:
     @staticmethod
     def buscar_dispositivos_sbc_avanzado(requisitos_hardware: dict):
-        """
-        CONSUllTA MAESTRA DE RENDIMIENTO Y TIENDAS
-        Filtra y cruza: dispositivos, categorias, marcas, procesadores, gpu, benchmarks, tiendas y precios.
-        """
+        """Filtra dispositivos usando degradación progresiva de restricciones para garantizar resultados."""
         try:
-            # 1. Definimos la estructura del JOIN masivo de forma declarativa.
-            # Supabase mapea las relaciones basándose en tus Foreign Keys.
-            select_query = """
-                id_dispositivo,
-                modelo,
-                ram,
-                almacenamiento,
-                sistema_operativo,
-                marcas(nombre),
-                categorias(id_categoria),
-                procesadores(nombre, benchmark, gama),
-                gpu(nombre),
-                benchmarks(antutu),
-                precios(precio, tiendas(nombre, url))
-            """
-            
-            # Iniciamos la consulta base apuntando a la tabla principal
-            query = supabase.table("dispositivos").select(select_query)
-            
-            # Filtro estático inicial: Limitado a Celulares (id_categoria = 1)
-            query = query.eq("id_categoria", 1)
+            # 1. Consultas desacopladas independientes para eludir la falta de FKs relacionales
+            res_disp = (
+                supabase.table("dispositivos")
+                .select("""
+                id_dispositivo, modelo, ram, almacenamiento, sistema_operativo,
+                marcas(nombre), categorias(id_categoria), procesadores(nombre, benchmark, gama), gpu(nombre)
+            """)
+                .eq("id_categoria", 1)
+                .execute()
+            )
 
-            # 2. Restricciones Dinámicas Básicas
-            if "ram_min" in requisitos_hardware and requisitos_hardware["ram_min"] > 0:
-                query = query.gte("ram", requisitos_hardware["ram_min"])
+            res_precios = (
+                supabase.table("precios")
+                .select("id_dispositivo, precio, tiendas(nombre, url)")
+                .execute()
+            )
+            mapa_precios = {
+                p["id_dispositivo"]: p
+                for p in res_precios.data
+                if p.get("id_dispositivo")
+            }
 
-            if "benchmark_min" in requisitos_hardware and requisitos_hardware["benchmark_min"] > 0:
-                # Para filtrar por tablas relacionadas usamos la sintaxis 'tabla.columna'
-                query = query.gte("procesadores.benchmark", requisitos_hardware["benchmark_min"])
+            valores_existentes = [
+                float(p["precio"]) for p in res_precios.data if p.get("precio")
+            ]
+            min_precio_stock = min(valores_existentes) if valores_existentes else 0.0
 
-            if "presupuesto_max" in requisitos_hardware:
-                query = query.lte("precios.precio", requisitos_hardware["presupuesto_max"])
+            p_max = float(requisitos_hardware.get("presupuesto_max", 0))
+            b_min = float(requisitos_hardware.get("benchmark_min", 0))
+            ram_min = float(requisitos_hardware.get("ram_min", 4))
 
-            # 3. Ordenación por rendimiento bruto (Benchmarks) y economía
-            # Nota: Supabase API ordena de manera principal y secundaria usando comas
-            query = query.order("id_cpu->benchmark", ascending=False).order("precios->precio", ascending=True)
+            # Calibración comercial: Si el presupuesto es inferior al stock real, ajustamos al mínimo
+            if p_max > 0 and p_max < min_precio_stock:
+                p_max = min_precio_stock + 300
 
-            # Ejecutamos la consulta en Supabase
-            respuesta = query.execute()
-            datos_raw = respuesta.data
-            
-            dispositivos_procesados = []
-            
-            # 4. Post-procesamiento y aplanado del JSON (Emulando la salida exacta que esperan tus Agentes)
-            for item in datos_raw:
-                
-                # Extraemos la información de los nodos relacionales (evitando KeyErrors con .get)
-                marca_info = item.get("marcas") or {}
-                cpu_info = item.get("procesadores") or {}
-                gpu_info = item.get("gpu") or {}
-                bench_info = item.get("benchmarks") or {}
-                
-                # 'precios' y 'tiendas' pueden devolver listas o diccionarios dependiendo de tu cardinalidad. 
-                # Asumiendo estructura estándar:
-                lista_precios = item.get("precios") or []
-                precio_info = lista_precios[0] if isinstance(lista_precios, list) and len(lista_precios) > 0 else (lista_precios or {})
-                tienda_info = precio_info.get("tiendas") or {}
+            # Motor de degradación de 4 niveles: Soluciona la asimetría de raíz
+            for nivel in ["estricto", "relajado_cpu", "tolerante_ram", "libre"]:
+                dispositivos_processed = []
+                for item in res_disp.data:
+                    id_disp = item["id_dispositivo"]
+                    precio_info = mapa_precios.get(id_disp, {})
+                    precio_val = (
+                        float(precio_info.get("precio"))
+                        if precio_info.get("precio")
+                        else 0.0
+                    )
 
-                # --- FILTROS AVANZADOS EN MEMORIA (Para resolver el SPLIT_PART complejo) ---
-                # Nota: Si manejas miles de registros, lo ideal sería migrar esto a una función RPC en Postgres.
-                # Para volumen escolar/académico, este filtrado en el ciclo es rápido y seguro.
-                
-                if requisitos_hardware.get("requiere_bateria"):
-                    # Aquí tendrías que evaluar si el dispositivo cumple con la condición de la batería.
-                    # Como la API no trae dispositivo_caracteristicas a menos que lo pidas, si usas mucho este filtro,
-                    # lo óptimo es agregar la columna 'bateria_mah' directa a la tabla dispositivos.
-                    pass 
+                    # Filtro de presupuesto (se libera en modo de emergencia si todo falla)
+                    if nivel != "libre" and p_max > 0 and precio_val > p_max:
+                        continue
 
-                dispositivos_procesados.append({
-                    "id_dispositivo": item["id_dispositivo"],
-                    "marca": marca_info.get("nombre"),
-                    "modelo": item["modelo"],
-                    "precio": float(precio_info.get("precio")) if precio_info.get("precio") else 0.0,
-                    "tienda": tienda_info.get("nombre"),
-                    "tienda_url": tienda_info.get("url"),
-                    "cpu": cpu_info.get("nombre"),
-                    "cpu_benchmark": cpu_info.get("benchmark"),
-                    "cpu_gama": cpu_info.get("gama"),
-                    "gpu": gpu_info.get("nombre") if gpu_info.get("nombre") else "Integrada",
-                    "antutu": bench_info.get("antutu"),
-                    "ram": item["ram"],
-                    "almacenamiento": item["almacenamiento"],
-                    "sistema_operativo": item["sistema_operativo"]
-                })
+                    # Filtro de memoria RAM base
+                    if nivel in ["estricto", "relajado_cpu"] and ram_min > 0:
+                        if float(item.get("ram", 0)) < ram_min:
+                            continue
 
-            return dispositivos_procesados
+                    cpu_info = item.get("procesadores") or {}
+                    bench_val = float(cpu_info.get("benchmark", 0))
+
+                    # Filtro de potencia bruta de CPU deducida por la IA
+                    if nivel == "estricto" and b_min > 0 and bench_val < b_min:
+                        continue
+
+                    dispositivos_processed.append(
+                        {
+                            "id_dispositivo": id_disp,
+                            "marca": (item.get("marcas") or {}).get("nombre")
+                            or "Genérica",
+                            "modelo": item["modelo"],
+                            "precio": precio_val,
+                            "tienda": (precio_info.get("tiendas") or {}).get("nombre")
+                            or "Tienda Central",
+                            "tienda_url": (precio_info.get("tiendas") or {}).get("url")
+                            or "#",
+                            "cpu": cpu_info.get("nombre") or "S/D",
+                            "cpu_benchmark": bench_val,
+                            "cpu_gama": cpu_info.get("gama") or "Media",
+                            "gpu": (item.get("gpu") or {}).get("nombre") or "Integrada",
+                            "antutu": bench_val,
+                            "ram": item["ram"],
+                            "almacenamiento": item["almacenamiento"],
+                            "sistema_operativo": item["sistema_operativo"],
+                        }
+                    )
+                if dispositivos_processed:
+                    break
+
+            # Clasificación comercial premium: El mejor rendimiento disponible para tu bolsillo
+            dispositivos_processed.sort(
+                key=lambda x: (-x["cpu_benchmark"], x["precio"])
+            )
+            return dispositivos_processed
 
         except Exception as e:
-            print(f"Error en el Modelo de Dispositivos Extendido con Supabase API: {e}")
+            print(f"❌ Error crítico en el Modelo de Dispositivos: {e}")
             return []
