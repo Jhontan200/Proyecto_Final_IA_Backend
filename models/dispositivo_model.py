@@ -5,16 +5,25 @@ from config.database import supabase
 class DispositivoModel:
     @staticmethod
     def buscar_dispositivos_sbc_avanzado(requisitos_hardware: dict):
-        """Filtra dispositivos usando degradación progresiva de restricciones para garantizar resultados."""
+        """Filtra dispositivos adaptando categorías y aplicando degradación elástica de hardware."""
         try:
-            # 1. Consultas desacopladas independientes para eludir la falta de FKs relacionales
+            # Detección dinámica de categoría (Celular = 1 vs Tablet = 3) basado en hechos de almacenamiento/pantalla
+            p_rom = str(requisitos_hardware.get("almacenamiento"))
+            p_screen = str(requisitos_hardware.get("pantalla"))
+            id_cat = (
+                3
+                if ("256" in p_rom or "512" in p_rom or "alto" in p_rom)
+                and "grande" in p_screen
+                else 1
+            )
+
             res_disp = (
                 supabase.table("dispositivos")
                 .select("""
                 id_dispositivo, modelo, ram, almacenamiento, sistema_operativo,
                 marcas(nombre), categorias(id_categoria), procesadores(nombre, benchmark, gama), gpu(nombre)
             """)
-                .eq("id_categoria", 1)
+                .eq("id_categoria", id_cat)
                 .execute()
             )
 
@@ -28,7 +37,6 @@ class DispositivoModel:
                 for p in res_precios.data
                 if p.get("id_dispositivo")
             }
-
             valores_existentes = [
                 float(p["precio"]) for p in res_precios.data if p.get("precio")
             ]
@@ -37,16 +45,22 @@ class DispositivoModel:
             p_max = float(requisitos_hardware.get("presupuesto_max", 0))
             b_min = float(requisitos_hardware.get("benchmark_min", 0))
             ram_min = float(requisitos_hardware.get("ram_min", 4))
+            pref_os = requisitos_hardware.get("sistema_operativo", "android")
 
-            # Calibración comercial: Si el presupuesto es inferior al stock real, ajustamos al mínimo
             if p_max > 0 and p_max < min_precio_stock:
                 p_max = min_precio_stock + 300
 
-            # Motor de degradación de 4 niveles: Soluciona la asimetría de raíz
+            # Cuatro capas de relajación elástica para resolver la contradicción de hardware de raíz
             for nivel in ["estricto", "relajado_cpu", "tolerante_ram", "libre"]:
                 dispositivos_processed = []
+                modelos_vistos = set()
+
                 for item in res_disp.data:
                     id_disp = item["id_dispositivo"]
+                    modelo_normalizado = str(item["modelo"]).strip().lower()
+                    if modelo_normalizado in modelos_vistos:
+                        continue
+
                     precio_info = mapa_precios.get(id_disp, {})
                     precio_val = (
                         float(precio_info.get("precio"))
@@ -54,19 +68,25 @@ class DispositivoModel:
                         else 0.0
                     )
 
-                    # Filtro de presupuesto (se libera en modo de emergencia si todo falla)
-                    if nivel != "libre" and p_max > 0 and precio_val > p_max:
+                    # FILTRO DE ECOSISTEMA: Inquebrantable
+                    db_os = str(item.get("sistema_operativo", "")).lower()
+                    if pref_os == "ios" and "ios" not in db_os:
+                        continue
+                    if pref_os == "android" and "ios" in db_os:
                         continue
 
-                    # Filtro de memoria RAM base
-                    if nivel in ["estricto", "relajado_cpu"] and ram_min > 0:
-                        if float(item.get("ram", 0)) < ram_min:
-                            continue
+                    # Degradación progresiva por niveles de exigencia de la IA
+                    if nivel != "libre" and p_max > 0 and precio_val > p_max:
+                        continue
+                    if (
+                        nivel in ["estricto", "relajado_cpu"]
+                        and ram_min > 0
+                        and float(item.get("ram", 0)) < ram_min
+                    ):
+                        continue
 
                     cpu_info = item.get("procesadores") or {}
                     bench_val = float(cpu_info.get("benchmark", 0))
-
-                    # Filtro de potencia bruta de CPU deducida por la IA
                     if nivel == "estricto" and b_min > 0 and bench_val < b_min:
                         continue
 
@@ -91,10 +111,12 @@ class DispositivoModel:
                             "sistema_operativo": item["sistema_operativo"],
                         }
                     )
+                    modelos_vistos.add(modelo_normalizado)
+
+                # CORRECCIÓN: Si encontramos teléfonos aptos en este nivel, los devolvemos sin romper prematuramente las opciones
                 if dispositivos_processed:
                     break
 
-            # Clasificación comercial premium: El mejor rendimiento disponible para tu bolsillo
             dispositivos_processed.sort(
                 key=lambda x: (-x["cpu_benchmark"], x["precio"])
             )

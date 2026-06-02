@@ -1,98 +1,121 @@
 # models/usuario_model.py
-from config.database import supabase  # <-- Importamos el cliente unificado de Supabase
+from config.database import supabase
+
 
 class UsuarioModel:
     @staticmethod
     def verificar_credenciales(correo: str, contrasena: str):
-        """Valida el inicio de sesión contra la tabla 'usuarios'"""
         try:
-            # Filtramos usando .eq() para emular el WHERE correo = %s AND contrasena = %s
-            respuesta = (
+            res = (
                 supabase.table("usuarios")
                 .select("id_usuario, nombre, correo")
                 .eq("correo", correo)
                 .eq("contrasena", contrasena)
                 .execute()
             )
-            
-            usuarios = respuesta.data
-            
-            # Si la lista contiene al menos un elemento, las credenciales son válidas
-            if usuarios:
-                usuario = usuarios[0]
-                return {
-                    "id_usuario": usuario["id_usuario"],
-                    "nombre": usuario["nombre"],
-                    "correo": usuario["correo"]
-                }
-            return None
+            return res.data[0] if res.data else None
         except Exception as e:
-            print(f"Error en UsuarioModel (Login): {e}")
+            print(f"Error Login: {e}")
             return None
 
     @staticmethod
     def registrar_usuario(nombre: str, correo: str, contrasena: str):
-        """Inserta un nuevo usuario respetando estrictamente las columnas de la base de datos"""
         try:
-            # 1. Verificar si el correo ya existe para evitar duplicados accidentales
-            chequeo_existe = (
+            chk = (
                 supabase.table("usuarios")
                 .select("id_usuario")
                 .eq("correo", correo)
                 .execute()
             )
-            
-            if chequeo_existe.data:
-                return {"success": False, "message": "El correo electrónico ya está registrado."}
-            
-            # 2. Insertar el nuevo usuario. Envías un diccionario con las columnas y valores.
-            nuevo_registro = {
-                "nombre": nombre,
-                "correo": correo,
-                "contrasena": contrasena
-            }
-            
-            respuesta_insert = (
+            if chk.data:
+                return {"success": False, "message": "El correo ya está registrado."}
+            res = (
                 supabase.table("usuarios")
-                .insert(nuevo_registro)
+                .insert({"nombre": nombre, "correo": correo, "contrasena": contrasena})
                 .execute()
             )
-            
-            nuevo_usuario_lista = respuesta_insert.data
-            
-            if nuevo_usuario_lista:
-                usuario_creado = nuevo_usuario_lista[0]
+            if res.data:
+                u = res.data[0]
                 return {
                     "success": True,
                     "message": "Usuario registrado con éxito.",
                     "usuario": {
-                        "id_usuario": usuario_creado["id_usuario"],
-                        "nombre": usuario_creado["nombre"],
-                        "correo": usuario_creado["correo"]
-                    }
+                        "id_usuario": u["id_usuario"],
+                        "nombre": u["nombre"],
+                        "correo": u["correo"],
+                    },
                 }
             return {"success": False, "message": "No se pudo crear el usuario."}
-            
         except Exception as e:
-            print(f"Error en UsuarioModel (Registro): {e}")
-            return {"success": False, "message": f"Error en el servidor: {str(e)}"}
+            return {"success": False, "message": f"Error: {str(e)}"}
 
     @staticmethod
-    def guardar_en_historial(id_usuario: int, id_dispositivo: int, puntuacion: int = 95):
-        """Registra la auditoría de la recomendación exitosa en 'historial_recomendaciones'"""
+    def guardar_en_historial(
+        id_usuario: int, id_dispositivo: int, puntuacion: int = 95
+    ):
         try:
-            # Construimos el diccionario con la data del historial
-            datos_historial = {
-                "id_usuario": id_usuario,
-                "id_dispositivo": id_dispositivo,
-                "puntuacion": puntuacion
-            }
-            
-            # Ejecutamos la inserción simple
-            supabase.table("historial_recomendaciones").insert(datos_historial).execute()
+            supabase.table("historial_recomendaciones").insert(
+                {
+                    "id_usuario": id_usuario,
+                    "id_dispositivo": id_dispositivo,
+                    "puntuacion": puntuacion,
+                }
+            ).execute()
             return True
-            
         except Exception as e:
-            print(f"Error en UsuarioModel (Historial): {e}")
+            print(f"Error Historial: {e}")
             return False
-        # Nota: Los bloques 'finally' y 'conn.close()' desaparecen por completo de todo el archivo
+
+    @staticmethod
+    def obtener_historial(id_usuario: int):
+        """Obtiene el historial mediante consultas desacopladas eludiendo el error de caché PGRST200."""
+        try:
+            # 1. Obtener los registros de auditoría crudos del usuario activo
+            res_historial = (
+                supabase.table("historial_recomendaciones")
+                .select("id_historial, id_dispositivo, puntuacion, fecha")
+                .eq("id_usuario", id_usuario)
+                .order("fecha", desc=True)
+                .execute()
+            )
+            if not res_historial.data:
+                return []
+
+            # 2. Obtener la lista completa de dispositivos indexados con sus marcas asociadas
+            res_disp = (
+                supabase.table("dispositivos")
+                .select("id_dispositivo, modelo, sistema_operativo, marcas(nombre)")
+                .execute()
+            )
+            mapa_disp = {
+                d["id_dispositivo"]: d for d in res_disp.data if d.get("id_dispositivo")
+            }
+
+            # 3. Recomponer el árbol relacional exacto que HistoryView.js requiere en el Frontend
+            historial_combinado = []
+            for item in res_historial.data:
+                id_d = item.get("id_dispositivo")
+                disp_info = mapa_disp.get(id_d) or {}
+
+                historial_combinado.append(
+                    {
+                        "id_historial": item["id_historial"],
+                        "puntuacion": item["puntuacion"],
+                        "fecha": item["fecha"],
+                        "id_dispositivo": id_d,
+                        "dispositivos": {
+                            "modelo": disp_info.get("modelo", "Modelo Desconocido"),
+                            "sistema_operativo": disp_info.get(
+                                "sistema_operativo", "S/D"
+                            ),
+                            "marcas": {
+                                "nombre": (disp_info.get("marcas") or {}).get("nombre")
+                                or "Genérica"
+                            },
+                        },
+                    }
+                )
+            return historial_combinado
+        except Exception as e:
+            print(f"Error Obtener Historial: {e}")
+            return []

@@ -1,0 +1,462 @@
+-- =====================================================
+-- SISTEMA BASADO EN CONOCIMIENTO (SBC)
+-- Recomendación de celulares, laptops, tablets y PCs
+-- Compatible con Supabase PostgreSQL
+-- =====================================================
+
+-- ==========================================
+-- CATEGORÍAS
+-- ==========================================
+
+CREATE TABLE categorias (
+    id_categoria INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    nombre VARCHAR(50) NOT NULL UNIQUE
+);
+
+INSERT INTO categorias(nombre)
+VALUES
+('Celular'),
+('Laptop'),
+('Tablet'),
+('PC Armada'),
+('Componente');
+
+
+-- ==========================================
+-- MARCAS
+-- ==========================================
+
+CREATE TABLE marcas (
+    id_marca INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL UNIQUE
+);
+
+
+-- ==========================================
+-- PROCESADORES
+-- ==========================================
+
+CREATE TABLE procesadores (
+
+    id_cpu INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    nombre VARCHAR(150) NOT NULL,
+
+    fabricante VARCHAR(100),
+
+    nucleos INT CHECK(nucleos>=1),
+
+    hilos INT CHECK(hilos>=1),
+
+    frecuencia DECIMAL(4,2),
+
+    benchmark INT DEFAULT 0,
+
+    gama VARCHAR(20)
+    CHECK(gama IN
+    ('Baja','Media','Alta'))
+);
+
+
+-- ==========================================
+-- GPUS
+-- ==========================================
+
+CREATE TABLE gpu(
+
+    id_gpu INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    nombre VARCHAR(150),
+
+    benchmark INT DEFAULT 0,
+
+    memoria INT
+);
+
+
+-- ==========================================
+-- DISPOSITIVOS
+-- ==========================================
+
+CREATE TABLE dispositivos(
+
+    id_dispositivo INT
+    GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    id_categoria INT NOT NULL,
+
+    id_marca INT NOT NULL,
+
+    modelo VARCHAR(200) NOT NULL,
+
+    id_cpu INT,
+
+    id_gpu INT,
+
+    ram INT,
+
+    almacenamiento INT,
+
+    sistema_operativo VARCHAR(50),
+
+    activo BOOLEAN DEFAULT TRUE,
+
+    fecha_creacion TIMESTAMPTZ
+    DEFAULT NOW(),
+
+    CONSTRAINT fk_categoria
+    FOREIGN KEY(id_categoria)
+    REFERENCES categorias(id_categoria)
+    ON DELETE RESTRICT,
+
+    CONSTRAINT fk_marca
+    FOREIGN KEY(id_marca)
+    REFERENCES marcas(id_marca)
+    ON DELETE RESTRICT,
+
+    CONSTRAINT fk_cpu
+    FOREIGN KEY(id_cpu)
+    REFERENCES procesadores(id_cpu)
+    ON DELETE SET NULL,
+
+    CONSTRAINT fk_gpu
+    FOREIGN KEY(id_gpu)
+    REFERENCES gpu(id_gpu)
+    ON DELETE SET NULL
+);
+
+
+-- ==========================================
+-- CARACTERÍSTICAS
+-- ==========================================
+
+CREATE TABLE caracteristicas(
+
+    id_caracteristica INT
+    GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    nombre VARCHAR(100)
+    NOT NULL UNIQUE
+);
+
+
+INSERT INTO caracteristicas(nombre)
+VALUES
+('Batería'),
+('Pantalla'),
+('Camara'),
+('NFC'),
+('Hz'),
+('Peso'),
+('Carga rápida'),
+('WiFi'),
+('Bluetooth'),
+('5G');
+
+
+-- ==========================================
+-- RELACIÓN DISPOSITIVO-CARACTERÍSTICAS
+-- ==========================================
+
+CREATE TABLE dispositivo_caracteristicas(
+
+    id_dispositivo INT,
+
+    id_caracteristica INT,
+
+    valor VARCHAR(200),
+
+    PRIMARY KEY(
+        id_dispositivo,
+        id_caracteristica
+    ),
+
+    FOREIGN KEY(id_dispositivo)
+    REFERENCES dispositivos(id_dispositivo)
+    ON DELETE CASCADE,
+
+    FOREIGN KEY(id_caracteristica)
+    REFERENCES caracteristicas(id_caracteristica)
+    ON DELETE CASCADE
+);
+
+
+-- ==========================================
+-- BENCHMARKS
+-- ==========================================
+
+CREATE TABLE benchmarks(
+
+    id_benchmark INT
+    GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    id_cpu INT,
+
+    antutu INT,
+
+    geekbench INT,
+
+    fecha TIMESTAMPTZ
+    DEFAULT NOW(),
+
+    FOREIGN KEY(id_cpu)
+    REFERENCES procesadores(id_cpu)
+    ON DELETE CASCADE
+);
+
+
+-- ==========================================
+-- TIENDAS
+-- ==========================================
+
+CREATE TABLE tiendas(
+
+    id_tienda INT
+    GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    nombre VARCHAR(100)
+    NOT NULL,
+
+    url TEXT
+);
+
+
+-- ==========================================
+-- PRECIOS
+-- ==========================================
+
+CREATE TABLE precios(
+
+    id_precio INT
+    GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    id_dispositivo INT,
+
+    id_tienda INT,
+
+    precio NUMERIC(10,2),
+
+    moneda VARCHAR(10)
+    DEFAULT 'BOB',
+
+    fecha_actualizacion
+    TIMESTAMPTZ
+    DEFAULT NOW(),
+
+    FOREIGN KEY(id_dispositivo)
+    REFERENCES dispositivos(id_dispositivo)
+    ON DELETE CASCADE,
+
+    FOREIGN KEY(id_tienda)
+    REFERENCES tiendas(id_tienda)
+    ON DELETE CASCADE
+);
+
+
+-- ==========================================
+-- PREGUNTAS SBC
+-- ==========================================
+
+CREATE TABLE preguntas(
+
+    id_pregunta INT
+    GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    pregunta TEXT NOT NULL
+);
+
+
+INSERT INTO preguntas(pregunta)
+VALUES
+('¿Cuánto dinero piensa invertir?'),
+('¿Para qué utilizará el dispositivo?'),
+('¿Necesita batería de larga duración?'),
+('¿Prefiere pantalla grande?'),
+('¿Qué tan importante es la cámara?');
+
+
+-- ==========================================
+-- RESPUESTAS
+-- ==========================================
+
+CREATE TABLE respuestas(
+
+    id_respuesta INT
+    GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    id_pregunta INT,
+
+    valor VARCHAR(100),
+
+    FOREIGN KEY(id_pregunta)
+    REFERENCES preguntas(id_pregunta)
+    ON DELETE CASCADE
+);
+
+
+-- ==========================================
+-- REGLAS SBC
+-- ==========================================
+
+CREATE TABLE reglas_sbc(
+
+    id_regla INT
+    GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    condicion TEXT NOT NULL,
+
+    resultado TEXT NOT NULL,
+
+    prioridad INT DEFAULT 1
+);
+
+
+INSERT INTO reglas_sbc
+(condicion,resultado,prioridad)
+
+VALUES
+
+(
+'presupuesto<2500 AND uso=gaming',
+'ram>=8 AND benchmark>=700000',
+1
+),
+
+(
+'fotografia=alta',
+'camara>=50',
+2
+),
+
+(
+'bateria=alta',
+'bateria>=5000',
+2
+);
+
+
+-- ==========================================
+-- USUARIOS
+-- ==========================================
+
+CREATE TABLE usuarios(
+
+    id_usuario UUID PRIMARY KEY
+    REFERENCES auth.users(id)
+    ON DELETE CASCADE,
+
+    nombre VARCHAR(100),
+
+    correo VARCHAR(200)
+    UNIQUE,
+
+    fecha_registro
+    TIMESTAMPTZ
+    DEFAULT NOW()
+);
+
+
+-- ==========================================
+-- HISTORIAL
+-- ==========================================
+
+CREATE TABLE historial_recomendaciones(
+
+    id_historial INT
+    GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    id_usuario UUID,
+
+    id_dispositivo INT,
+
+    puntuacion NUMERIC(5,2),
+
+    fecha TIMESTAMPTZ
+    DEFAULT NOW(),
+
+    FOREIGN KEY(id_usuario)
+    REFERENCES usuarios(id_usuario)
+    ON DELETE CASCADE,
+
+    FOREIGN KEY(id_dispositivo)
+    REFERENCES dispositivos(id_dispositivo)
+    ON DELETE CASCADE
+);
+
+
+
+-- ==========================================
+-- ÍNDICES
+-- ==========================================
+
+CREATE INDEX idx_dispositivo_categoria
+ON dispositivos(id_categoria);
+
+CREATE INDEX idx_dispositivo_cpu
+ON dispositivos(id_cpu);
+
+CREATE INDEX idx_precios_dispositivo
+ON precios(id_dispositivo);
+
+CREATE INDEX idx_historial_usuario
+ON historial_recomendaciones(id_usuario);
+
+
+
+
+
+el segundo:
+
+
+-- ==========================================
+-- USUARIOS (Modificado: Independiente y con Contraseña)
+-- ==========================================
+
+DROP TABLE IF EXISTS usuarios CASCADE;
+
+CREATE TABLE usuarios(
+    id_usuario INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    nombre VARCHAR(100),
+    correo VARCHAR(200) UNIQUE NOT NULL,
+    contrasena VARCHAR(255) NOT NULL, -- Campo para la contraseña en texto plano
+    fecha_registro TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- ==========================================
+-- HISTORIAL (Modificado: id_usuario ahora es INT)
+-- ==========================================
+
+DROP TABLE IF EXISTS historial_recomendaciones CASCADE;
+
+CREATE TABLE historial_recomendaciones(
+
+    id_historial INT
+    GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    id_usuario INT, -- Cambiado de UUID a INT para acoplarse a la nueva tabla
+
+    id_dispositivo INT,
+
+    puntuacion NUMERIC(5,2),
+
+    fecha TIMESTAMPTZ
+    DEFAULT NOW(),
+
+    FOREIGN KEY(id_usuario)
+    REFERENCES usuarios(id_usuario)
+    ON DELETE CASCADE,
+
+    FOREIGN KEY(id_dispositivo)
+    REFERENCES dispositivos(id_dispositivo)
+    ON DELETE CASCADE
+);
+
+
+-- ==========================================
+-- ÍNDICES (Actualizado)
+-- ==========================================
+
+-- El índice se mantiene igual, pero ahora procesará el ID entero de forma más rápida
+CREATE INDEX idx_historial_usuario
+ON historial_recomendaciones(id_usuario);
